@@ -8,11 +8,12 @@ install()
 
 
 if __name__ == "__main__":
-    print(f"Welcome to [bold red]owa exporter[/bold red] :smile:")
+    print(f"Welcome to [bold red]mail exporter[/bold red] :smile:")
 
     email = os.environ.get("EMAIL")
     password = os.environ.get("PASSWORD")
     store = Email(email=email, password=password)
+    store.print_db_status()
 
     # store.collect_mail()
     # store.get_db_records()

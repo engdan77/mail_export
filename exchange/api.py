@@ -32,10 +32,12 @@ class Mail(Model):
 
 class Email:
     def __init__(self, /, filename="emails.sqlite", email=None, password=None):
-        db = SqliteDatabase(filename)
+        self.filename = filename
+        db = SqliteDatabase(self.filename)
         database_proxy.initialize(db)
         self.email = email
         self.password = password
+        self.filtered_records = None
 
         db.create_tables(
             [
@@ -46,6 +48,24 @@ class Email:
     @staticmethod
     def to_iso_dt(dt_string):
         return datetime.datetime.strptime(dt_string, ISO_FORMAT)
+
+    def print_db_status(self):
+        print('='*50)
+        print(f'[bold]Database:[/bold] {self.filename}')
+        print(f'[bold]E-mail:[/bold] {self.email}')
+        print(f'[bold]Stored count: {self.db_count}')
+        s, e = [_.strftime('%Y-%m-%d') for _ in self.db_daterange]
+        print(f'[bold]Stored range: {s} -> {e}')
+        print('=' * 50)
+
+    @property
+    def db_count(self):
+        return Mail.select().count()
+
+    @property
+    def db_daterange(self):
+        return (Mail.select().order_by(Mail.datetime).first().datetime,
+                Mail.select().order_by(Mail.datetime.desc()).first().datetime)
 
     def collect_mail(self):
         credentials = Credentials(self.email, self.password)
