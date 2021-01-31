@@ -12,6 +12,7 @@ from pathlib import Path
 from bullet import ScrollBar
 import htmllaundry
 from markdownify import markdownify as md
+from loguru import logger
 
 
 ISO_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -32,6 +33,8 @@ class Mail(Model):
 
 class Email:
     def __init__(self, /, filename="emails.sqlite", email=None, password=None):
+        self.filter_keyword = None
+        self.filter_range = None, None
         self.filename = filename
         db = SqliteDatabase(self.filename)
         database_proxy.initialize(db)
@@ -52,10 +55,12 @@ class Email:
     def print_db_status(self):
         print('='*50)
         print(f'[bold]Database:[/bold] {self.filename}')
-        print(f'[bold]E-mail:[/bold] {self.email}')
-        print(f'[bold]Stored count: {self.db_count}')
-        s, e = [_.strftime('%Y-%m-%d') for _ in self.db_daterange]
-        print(f'[bold]Stored range: {s} -> {e}')
+        print(f'[bold]E-mail account:[/bold] {self.email}')
+        print(f'[bold]Stored count:[/bold] {self.db_count}')
+        s, e = [_.strftime('%Y-%m-%d') for _ in self.db_date_range]
+        print(f'[bold]Stored range:[/bold] {s} -> {e}')
+        print('[bold]Filter range:[/bold] {} <-> {}'.format(*self.filter_range))
+        print(f'[bold]Filter keyword:[/bold] {self.filter_keyword}')
         print('=' * 50)
 
     @property
@@ -63,11 +68,13 @@ class Email:
         return Mail.select().count()
 
     @property
-    def db_daterange(self):
+    def db_date_range(self):
         return (Mail.select().order_by(Mail.datetime).first().datetime,
                 Mail.select().order_by(Mail.datetime.desc()).first().datetime)
 
     def collect_mail(self):
+        print('exiting')
+        exit()
         credentials = Credentials(self.email, self.password)
         account = Account(self.email, credentials=credentials, autodiscover=True)
         fields = ("datetime", "sender", "to", "cc", "subject", "body")
@@ -90,7 +97,7 @@ class Email:
 
     @staticmethod
     def get_db_records(**kwargs):
-        f, t = kwargs.get("f", 0), kwargs.get("t", Mail.select().count())
+        f, t = kwargs.get("from_id", 0), kwargs.get("to_id", Mail.select().count())
         records = Mail.select().where((Mail.id >= f) & (Mail.id <= t)).dicts()
         return records
 
@@ -129,7 +136,7 @@ class Email:
             )
             .dicts()
         )
-        log.info(f"found {len(records)} records")
+        logger.info(f"found {len(records)} records")
         return records
 
     def select_records(self, records=None):
@@ -157,7 +164,10 @@ class Email:
 
     def show_record(self, record_id):
         r = Mail.select().where(Mail.id == record_id).first()
-        markdown = self.format_html(r.body)
+        try:
+            markdown = self.format_html(r.body)
+        except AttributeError:
+            return
         print("[white]_[/white]" * 50)
         print(f"[bold red]From:[/bold red] {r.sender}")
         print(f"[bold red]To:[/bold red] {r.to}")
