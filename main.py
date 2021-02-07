@@ -39,6 +39,7 @@ class Menu:
 
     def main(self):
         while True:
+            self.email.apply_filter()
             self.info()
             items = {'Exit': exit,
                      'E-mail settings': self.get_mail_creds,
@@ -102,7 +103,7 @@ def main():
     # store.get_db_records()
     store.print_db_records_table()
     # store.records_to_files()
-    records = store.find_records("Daniel")
+    records = store.apply_filter("Daniel")
     s = store.select_records(records)
     store.show_record(s)
 

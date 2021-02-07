@@ -13,6 +13,8 @@ from bullet import ScrollBar
 import htmllaundry
 from markdownify import markdownify as md
 from loguru import logger
+import operator
+from functools import reduce
 
 
 ISO_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -40,7 +42,7 @@ class Email:
         database_proxy.initialize(db)
         self.email = email
         self.password = password
-        self.filtered_records = None
+        self.filtered_records = []
 
         db.create_tables(
             [
@@ -61,6 +63,7 @@ class Email:
         print(f'[bold]Stored range:[/bold] {s} -> {e}')
         print('[bold]Filter range:[/bold] {} <-> {}'.format(*self.filter_range))
         print(f'[bold]Filter keyword:[/bold] {self.filter_keyword}')
+        print(f'[bold]Filter count:[/bold] {len(self.filtered_records)}')
         print('=' * 50)
 
     @property
@@ -124,19 +127,37 @@ class Email:
             log.info(f"writing {f}")
             f.write_text(r["body"])
 
-    @staticmethod
-    def find_records(search_word):
+    def apply_filter(self):
+        search_word = self.filter_keyword
+        from_to_date = self.filter_range
+        if not any([search_word, any(from_to_date)]):
+            self.filtered_records = Mail.select()
+            return
+
+        and_items = []
+
+        if search_word:
+            or_items = [(Mail.to.contains(search_word)),
+                        (Mail.sender.contains(search_word)),
+                        (Mail.subject.contains(search_word)),
+                        (Mail.body.contains(search_word))]
+            item_expression = reduce(operator.or_, or_items)
+            and_items.append(item_expression)
+
+        if from_to_date:
+            to_, from_ = from_to_date
+            date_expression = (Mail.datetime >= from_) & (Mail.datetime <= to_)
+            and_items.append(date_expression)
+
+        expression = reduce(operator.and_, and_items)
+
         records = (
             Mail.select()
-            .where(
-                (Mail.to.contains(search_word))
-                | (Mail.sender.contains(search_word))
-                | (Mail.subject.contains(search_word))
-                | (Mail.body.contains(search_word))
-            )
+            .where(expression)
             .dicts()
         )
         logger.info(f"found {len(records)} records")
+        self.filtered_records = records
         return records
 
     def select_records(self, records=None):
