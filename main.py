@@ -67,7 +67,7 @@ class Menu:
         self.email.filter_range = [_[-1] for _ in cli]
 
     def get_search_word(self):
-        words = Input(prompt='What filter words to use: ').launch()
+        words = Input(prompt='What filter words to use: ', pattern='.*').launch()
         self.email.filter_keyword = words
 
     def reset_filters(self):
@@ -117,4 +117,5 @@ def main():
 
 
 if __name__ == "__main__":
+    from bullet import YesNo
     main()

@@ -9,7 +9,7 @@ from rich import print
 from richlog import log
 import re
 from pathlib import Path
-from bullet import ScrollBar
+from bullet import ScrollBar, YesNo
 import htmllaundry
 from markdownify import markdownify as md
 from loguru import logger
@@ -35,7 +35,7 @@ class Mail(Model):
 
 class Email:
     def __init__(self, /, filename="emails.sqlite", email=None, password=None):
-        self.filter_keyword = None
+        self.filter_keyword = ''
         self.filter_range = None, None
         self.filename = filename
         db = SqliteDatabase(self.filename)
@@ -97,6 +97,10 @@ class Email:
             )
             if Mail.select().where(Mail.datetime == f.datetime).count() == 0:
                 Mail.insert(**f._asdict()).execute()
+            else:
+                quit_ = YesNo('Found existing e-mail stored, would you like to abort? ', default='y').launch()
+                if quit_:
+                    break
 
     @staticmethod
     def get_db_records(**kwargs):
@@ -137,19 +141,23 @@ class Email:
         and_items = []
 
         if search_word:
-            or_items = [(Mail.to.contains(search_word)),
-                        (Mail.sender.contains(search_word)),
-                        (Mail.subject.contains(search_word)),
-                        (Mail.body.contains(search_word))]
+            s = search_word.lower()
+            or_items = [(Mail.to.contains(s)),
+                        (Mail.sender.contains(s)),
+                        (Mail.subject.contains(s)),
+                        (Mail.body.contains(s))]
             item_expression = reduce(operator.or_, or_items)
             and_items.append(item_expression)
 
-        if from_to_date:
+        if any(from_to_date):
             to_, from_ = from_to_date
             date_expression = (Mail.datetime >= from_) & (Mail.datetime <= to_)
             and_items.append(date_expression)
 
-        expression = reduce(operator.and_, and_items)
+        if len(and_items) > 0:
+            expression = reduce(operator.and_, and_items)
+        else:
+            expression = and_items[0]
 
         records = (
             Mail.select()
@@ -172,6 +180,7 @@ class Email:
                 for r in records
             ]
         )
+        print('='*79)
         cli = ScrollBar(
             prompt="Which one would you like to look at?", choices=l, height=10
         ).launch()
