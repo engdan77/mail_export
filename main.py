@@ -45,7 +45,8 @@ class Menu:
                      'E-mail settings': self.get_mail_creds,
                      'Update date range filter': self.get_range,
                      'Update keyword filter': self.get_search_word,
-                     'Reset filters': self.reset_filters}
+                     'Reset filters': self.reset_filters,
+                     'Show filtered e-mails': self.display_filtered_email}
             if all([self.email.email, self.email.password]):
                 items['Download from account'] = self.email.collect_mail
             cli = Bullet(prompt='Choose:',
@@ -72,6 +73,13 @@ class Menu:
     def reset_filters(self):
         self.email.filter_keyword = None
         self.email.filter_range = None, None
+
+    def display_filtered_email(self):
+        while True:
+            record = self.email.select_records(filtered=True)
+            if record is None:
+                break
+            self.email.show_record(record)
 
 
 def init_log():

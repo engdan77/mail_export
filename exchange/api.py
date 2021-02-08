@@ -131,7 +131,7 @@ class Email:
         search_word = self.filter_keyword
         from_to_date = self.filter_range
         if not any([search_word, any(from_to_date)]):
-            self.filtered_records = Mail.select()
+            self.filtered_records = Mail.select().dicts()
             return
 
         and_items = []
@@ -160,8 +160,10 @@ class Email:
         self.filtered_records = records
         return records
 
-    def select_records(self, records=None):
-        if not records:
+    def select_records(self, filtered=False, records=None):
+        if filtered:
+            records = self.filtered_records
+        elif not records:
             records = self.get_db_records()
         l = ["Exit"]
         l.extend(
