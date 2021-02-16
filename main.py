@@ -1,7 +1,7 @@
 import os
-from richlog import log
 from rich.traceback import install
 from rich import print
+from rich.console import Console
 from exchange import Email
 import argparse
 from loguru import logger
@@ -39,6 +39,7 @@ class Menu:
 
     def main(self):
         while True:
+            Console().clear()
             self.email.apply_filter()
             self.info()
             items = {'Exit': exit,
@@ -46,7 +47,8 @@ class Menu:
                      'Update date range filter': self.get_range,
                      'Update keyword filter': self.get_search_word,
                      'Reset filters': self.reset_filters,
-                     'Show filtered e-mails': self.display_filtered_email}
+                     'Show filtered e-mails': self.display_filtered_email,
+                     'Save filtered e-mails to folder': self.save_filtered_emails}
             if all([self.email.email, self.email.password]):
                 items['Download from account'] = self.email.collect_mail
             cli = Bullet(prompt='Choose:',
@@ -67,7 +69,7 @@ class Menu:
         self.email.filter_range = [_[-1] for _ in cli]
 
     def get_search_word(self):
-        words = Input(prompt='What filter words to use: ', pattern='.*').launch()
+        words = input('What filter words to use: ')
         self.email.filter_keyword = words
 
     def reset_filters(self):
@@ -81,6 +83,11 @@ class Menu:
                 break
             self.email.show_record(record)
 
+    def save_filtered_emails(self):
+        self.email.print_db_records_table(filtered=True)
+        folder = input(f'Export folder: ')
+        self.email.records_to_files(out=folder, filtered=True)
+
 
 def init_log():
     logger.remove()
@@ -90,7 +97,7 @@ def init_log():
 def main():
     init_log()
     args = get_args()
-    email = Email(email=args.email, password=args.password)
+    email = Email(**args.__dict__)
     menu = Menu(args, email)
     menu.main()
 
@@ -117,5 +124,4 @@ def main():
 
 
 if __name__ == "__main__":
-    from bullet import YesNo
     main()

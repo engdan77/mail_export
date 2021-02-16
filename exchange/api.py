@@ -25,19 +25,19 @@ class Mail(Model):
     datetime = DateTimeField()
     to = TextField()
     sender = TextField()
-    cc = TextField()
-    subject = TextField()
-    body = TextField()
+    cc = TextField(null=True)
+    subject = TextField(null=True)
+    body = TextField(null=True)
 
     class Meta:
         database = database_proxy
 
 
 class Email:
-    def __init__(self, /, filename="emails.sqlite", email=None, password=None):
+    def __init__(self, /, database="emails.sqlite", email=None, password=None):
         self.filter_keyword = ''
         self.filter_range = None, None
-        self.filename = filename
+        self.filename = database
         db = SqliteDatabase(self.filename)
         database_proxy.initialize(db)
         self.email = email
@@ -72,35 +72,46 @@ class Email:
 
     @property
     def db_date_range(self):
-        return (Mail.select().order_by(Mail.datetime).first().datetime,
-                Mail.select().order_by(Mail.datetime.desc()).first().datetime)
+        try:
+            return (Mail.select().order_by(Mail.datetime).first().datetime,
+                    Mail.select().order_by(Mail.datetime.desc()).first().datetime)
+        except AttributeError:
+            _ = datetime.datetime.now()
+            return _, _
 
     def collect_mail(self):
-        print('exiting')
-        exit()
         credentials = Credentials(self.email, self.password)
         account = Account(self.email, credentials=credentials, autodiscover=True)
         fields = ("datetime", "sender", "to", "cc", "subject", "body")
         tot = account.inbox.total_count
         log.info(f"total items inbox {tot}")
 
+        bail_out, passed = False, False
         for item in track(
-            account.inbox.all().order_by("-datetime_received")[:3], total=tot
+            account.inbox.all().order_by("-datetime_received"), total=tot
         ):
-            f = nt("f", fields)(
-                self.to_iso_dt(str(item.datetime_received.strftime(ISO_FORMAT))),
-                f"{item.sender.name} <{item.sender.email_address}>",
-                ",".join([f"{_.name} <{_.email_address}>" for _ in item.to_recipients]),
-                str(item.display_cc),
-                item.subject,
-                item.body,
-            )
+            if bail_out:
+                return
+            try:
+                f = nt("f", fields)(
+                    self.to_iso_dt(str(item.datetime_received.strftime(ISO_FORMAT))),
+                    f"{item.sender.name} <{item.sender.email_address}>",
+                    ",".join([f"{_.name} <{_.email_address}>" for _ in item.to_recipients]),
+                    str(item.display_cc),
+                    item.subject,
+                    item.body,
+                )
+            except TypeError as e:
+                log.warn(f'Unable to process email, skipping: {item}')
             if Mail.select().where(Mail.datetime == f.datetime).count() == 0:
-                Mail.insert(**f._asdict()).execute()
-            else:
-                quit_ = YesNo('Found existing e-mail stored, would you like to abort? ', default='y').launch()
-                if quit_:
-                    break
+                try:
+                    Mail.insert(**f._asdict()).execute()
+                except IntegrityError as e:
+                    log.warn(f'Unable to update db: {e.args}')
+                    breakpoint()
+            elif not passed:
+                bail_out = 'y' in input('I have found existing e-mail stored, would you like to abort (y/n):').lower()
+                passed = True
 
     @staticmethod
     def get_db_records(**kwargs):
@@ -108,7 +119,7 @@ class Email:
         records = Mail.select().where((Mail.id >= f) & (Mail.id <= t)).dicts()
         return records
 
-    def print_db_records_table(self):
+    def print_db_records_table(self, filtered=False):
         cols = Mail._meta.columns.keys()
         table = Table(show_header=True, header_style="bold magenta", min_width=300)
         for _ in cols:
@@ -116,12 +127,20 @@ class Email:
         next(
             c for c in table.columns if c.header in ["body", "to", "sender"]
         ).width = 20
-        for _ in self.get_db_records():
+        if not filtered:
+            items = self.get_db_records()
+        else:
+            items = self.filtered_records
+        for _ in items:
             table.add_row(*[str(_[c])[:40] for c in cols])
         Console().print(table)
 
-    def records_to_files(self, out="./out"):
-        for r in self.get_db_records():
+    def records_to_files(self, out="./out", filtered=False):
+        if filtered:
+            items = self.filtered_records
+        else:
+            items = self.get_db_records()
+        for r in items:
             fn = f"{r['datetime'].strftime('%y%m%d_%H%M')}"
             fn += f"__{r['sender'].split()[0]}__"
             fn += re.sub(r"[^\w]", "", f"{'_'.join(r['subject'].split()[:10])}")
@@ -129,7 +148,10 @@ class Email:
             Path(out).mkdir(parents=True, exist_ok=True)
             f = Path(out) / Path(fn)
             log.info(f"writing {f}")
-            f.write_text(r["body"])
+            t = r["body"]
+            if not '<html' in t:
+                t = f'<meta http-equiv="Content-Type" content="text/html" charset="utf-8"/>{t}'.replace('\n', '<br>')
+            f.write_text(t)
 
     def apply_filter(self):
         search_word = self.filter_keyword
@@ -150,7 +172,7 @@ class Email:
             and_items.append(item_expression)
 
         if any(from_to_date):
-            to_, from_ = from_to_date
+            from_, to_ = from_to_date
             date_expression = (Mail.datetime >= from_) & (Mail.datetime <= to_)
             and_items.append(date_expression)
 
