@@ -52,7 +52,12 @@ class Email:
         )
 
     @staticmethod
-    def to_iso_dt(dt_string):
+    def to_iso_dt(dt_string) -> datetime.datetime:
+        """Parse datetime
+
+        :param dt_string: Raw datetime string
+        :return:
+        """
         return datetime.datetime.strptime(dt_string, ISO_FORMAT)
 
     def print_db_status(self) -> None:
@@ -73,10 +78,18 @@ class Email:
 
     @property
     def db_count(self) -> int:
+        """Count DB records
+
+        :return: count
+        """
         return Mail.select().count()
 
     @property
     def db_date_range(self) -> Annotated[tuple, "from and to range"]:
+        """Return a from, to for the range of emails in DB
+
+        :return: from, to tuple
+        """
         try:
             return (Mail.select().order_by(Mail.datetime).first().datetime,
                     Mail.select().order_by(Mail.datetime.desc()).first().datetime)

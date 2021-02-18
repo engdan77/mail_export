@@ -8,12 +8,16 @@ from loguru import logger
 from bullet import Bullet, Input, Password, SlidePrompt
 from collections import namedtuple
 
-install()
+install()  # install rich print
 
 dt = namedtuple('dt', 'text pattern')('YYYY-MM-DD', '(\d{4}-\d{2}-\d{2})|^$')
 
 
-def get_args():
+def get_args() -> argparse.Namespace:
+    """Get command arguments.
+
+    :rtype: args
+    """
     parser = argparse.ArgumentParser(description='Application for creating a local copy of your exchange mail account')
     parser.add_argument('--database', type=str, default='emails.sqlite', help='SQLite database file to store to')
     parser.add_argument('--email', type=str, help='E-mail to download from')
@@ -25,7 +29,12 @@ def get_args():
     return args
 
 
-def bitem(bullet_item):
+def bitem(bullet_item) -> str:
+    """Helper function for selecting email.
+
+    :param bullet_item:
+    :return:
+    """
     return next(iter(bullet_item.split(' - ')))
 
 
@@ -34,10 +43,12 @@ class Menu:
         self.args = args
         self.email = email
 
-    def info(self):
+    def info(self) -> None:
+        """Display info in menu"""
         self.email.print_db_status()
 
-    def main(self):
+    def main(self) -> None:
+        """Main menu"""
         while True:
             Console().clear()
             self.email.apply_filter()
@@ -55,41 +66,57 @@ class Menu:
                          choices=list(items.keys())).launch()
             items.get(cli)()
 
-    def get_mail_creds(self):
+    def get_mail_creds(self) -> list:
+        """Return credentials.
+
+        :return: List with username and password
+        """
         cli = SlidePrompt([Input('E-mail address: '),
                           Password('Password: ')]).launch()
         v = dict(cli).values()
         self.email.email, self.email.password = v
         return cli
 
-    def get_range(self):
+    def get_range(self) -> None:
+        """Get and set date range filter."""
+
         cli = SlidePrompt([
             Input(prompt=f'From date [{dt.text}]: ', pattern=dt.pattern),
             Input(prompt=f'To date [{dt.text}]: ', pattern=dt.pattern)]).launch()
         self.email.filter_range = [_[-1] for _ in cli]
 
-    def get_search_word(self):
+    def get_search_word(self) -> None:
+        """Get and set search for to filter."""
+
         words = input('What filter words to use: ')
         self.email.filter_keyword = words
 
-    def reset_filters(self):
+    def reset_filters(self) -> None:
+        """Reset filters."""
+
         self.email.filter_keyword = None
         self.email.filter_range = None, None
 
-    def display_filtered_email(self):
+    def display_filtered_email(self) -> None:
+        """Display those filtered emails."""
+
         while True:
             record = self.email.select_records(filtered=True)
             if record is None:
                 break
             self.email.show_record(record)
 
-    def save_filtered_emails(self):
+    def save_filtered_emails(self) -> None:
+        """Save filtered emails as files."""
+
         self.email.print_db_records_table(filtered=True)
         folder = input(f'Export folder: ')
         self.email.records_to_files(out=folder, filtered=True)
 
 
-def init_log():
+def init_log() -> None:
+    """Initialize logging"""
+
     logger.remove()
     logger.add('app.log', rotation='100 MB')
 
@@ -100,27 +127,6 @@ def main():
     email = Email(**args.__dict__)
     menu = Menu(args, email)
     menu.main()
-
-    word = menu_get_search_word()
-    print(word)
-    f, t = menu_get_range()
-    print(f, t)
-
-
-    print(f"Welcome to [bold red]mail exporter[/bold red] :smile::e-mail::star:")
-
-    email = os.environ.get("EMAIL")
-    password = os.environ.get("PASSWORD")
-
-    store.print_db_status()
-
-    # store.collect_mail()
-    # store.get_db_records()
-    store.print_db_records_table()
-    # store.records_to_files()
-    records = store.apply_filter("Daniel")
-    s = store.select_records(records)
-    store.show_record(s)
 
 
 if __name__ == "__main__":
