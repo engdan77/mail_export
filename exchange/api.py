@@ -15,6 +15,7 @@ from markdownify import markdownify as md
 from loguru import logger
 import operator
 from functools import reduce
+from typing import Annotated
 
 
 ISO_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -54,7 +55,11 @@ class Email:
     def to_iso_dt(dt_string):
         return datetime.datetime.strptime(dt_string, ISO_FORMAT)
 
-    def print_db_status(self):
+    def print_db_status(self) -> None:
+        """Prints the status of emails within the database.
+
+        :rtype: None
+        """
         print('='*50)
         print(f'[bold]Database:[/bold] {self.filename}')
         print(f'[bold]E-mail account:[/bold] {self.email}')
@@ -67,11 +72,11 @@ class Email:
         print('=' * 50)
 
     @property
-    def db_count(self):
+    def db_count(self) -> int:
         return Mail.select().count()
 
     @property
-    def db_date_range(self):
+    def db_date_range(self) -> Annotated[tuple, "from and to range"]:
         try:
             return (Mail.select().order_by(Mail.datetime).first().datetime,
                     Mail.select().order_by(Mail.datetime.desc()).first().datetime)
@@ -79,7 +84,11 @@ class Email:
             _ = datetime.datetime.now()
             return _, _
 
-    def collect_mail(self):
+    def collect_mail(self) -> None:
+        """Downloads all emails from account into database
+
+        :return: None
+        """
         credentials = Credentials(self.email, self.password)
         account = Account(self.email, credentials=credentials, autodiscover=True)
         fields = ("datetime", "sender", "to", "cc", "subject", "body")
@@ -114,12 +123,22 @@ class Email:
                 passed = True
 
     @staticmethod
-    def get_db_records(**kwargs):
+    def get_db_records(**kwargs) -> Annotated[tuple, "List of records"]:
+        """
+
+        :keyword int from_id: Filter from specific id
+        :keyword int to_id: Filter to specific id
+        :return:
+        """
         f, t = kwargs.get("from_id", 0), kwargs.get("to_id", Mail.select().count())
         records = Mail.select().where((Mail.id >= f) & (Mail.id <= t)).dicts()
         return records
 
-    def print_db_records_table(self, filtered=False):
+    def print_db_records_table(self, filtered: bool = False) -> None:
+        """Prints a pretty table of records
+
+        :param filtered: Print either filtered records or all
+        """
         cols = Mail._meta.columns.keys()
         table = Table(show_header=True, header_style="bold magenta", min_width=300)
         for _ in cols:
@@ -135,7 +154,12 @@ class Email:
             table.add_row(*[str(_[c])[:40] for c in cols])
         Console().print(table)
 
-    def records_to_files(self, out="./out", filtered=False):
+    def records_to_files(self, out: str = "./out", filtered: bool = False) -> None:
+        """Exports records to html files
+
+        :param out: Path to export to
+        :param filtered: Either export filtered or all records
+        """
         if filtered:
             items = self.filtered_records
         else:
@@ -153,7 +177,11 @@ class Email:
                 t = f'<meta http-equiv="Content-Type" content="text/html" charset="utf-8"/>{t}'.replace('\n', '<br>')
             f.write_text(t)
 
-    def apply_filter(self):
+    def apply_filter(self) -> Annotated[tuple, "List of records"]:
+        """Apply filter based on filter_keyword and filter_range criterias
+
+        :return: List of records
+        """
         search_word = self.filter_keyword
         from_to_date = self.filter_range
         if not any([search_word, any(from_to_date)]):
@@ -190,7 +218,13 @@ class Email:
         self.filtered_records = records
         return records
 
-    def select_records(self, filtered=False, records=None):
+    def select_records(self, filtered: bool = False, records: bool = None) -> Annotated[int, "id of selected record"]:
+        """Supply a selection list and ability to pick one
+
+        :param filtered: Only display filtered or all records
+        :param records: Optional list of records as input
+        :return: An ID of the record selected
+        """
         if filtered:
             records = self.filtered_records
         elif not records:
@@ -210,13 +244,18 @@ class Email:
         return i if i != "Exit" else None
 
     @staticmethod
-    def format_html(input):
+    def format_html(input: Annotated[str, "HTML text"]) -> None:
+        """Format and prints MarkDown from HTML within the terminal
+
+        :param input: Input data HTML
+        :return:
+        """
         html = htmllaundry.sanitize(input, htmllaundry.cleaners.LineCleaner)
         m = md(html)
         lines = [line for line in m.split("\n") if line.strip() != ""]
         return "\n".join(lines[:40])
 
-    def show_record(self, record_id):
+    def show_record(self, record_id: int) -> None:
         r = Mail.select().where(Mail.id == record_id).first()
         try:
             markdown = self.format_html(r.body)
