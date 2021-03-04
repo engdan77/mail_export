@@ -9,14 +9,13 @@ from rich import print
 from richlog import log
 import re
 from pathlib import Path
-from bullet import ScrollBar, YesNo
+from bullet import ScrollBar
 import htmllaundry
 from markdownify import markdownify as md
 from loguru import logger
 import operator
 from functools import reduce
 from typing import Annotated
-
 
 ISO_FORMAT = "%Y-%m-%d %H:%M:%S"
 database_proxy = DatabaseProxy()
@@ -65,7 +64,7 @@ class Email:
 
         :rtype: None
         """
-        print('='*50)
+        print('=' * 50)
         print(f'[bold]Database:[/bold] {self.filename}')
         print(f'[bold]E-mail account:[/bold] {self.email}')
         print(f'[bold]Stored count:[/bold] {self.db_count}')
@@ -110,7 +109,7 @@ class Email:
 
         bail_out, passed = False, False
         for item in track(
-            account.inbox.all().order_by("-datetime_received"), total=tot
+                account.inbox.all().order_by("-datetime_received"), total=tot
         ):
             if bail_out:
                 return
@@ -123,8 +122,9 @@ class Email:
                     item.subject,
                     item.body,
                 )
-            except TypeError as e:
+            except TypeError:
                 log.warn(f'Unable to process email, skipping: {item}')
+                continue
             if Mail.select().where(Mail.datetime == f.datetime).count() == 0:
                 try:
                     Mail.insert(**f._asdict()).execute()
@@ -147,6 +147,7 @@ class Email:
         records = Mail.select().where((Mail.id >= f) & (Mail.id <= t)).dicts()
         return records
 
+    # noinspection PyProtectedMember
     def print_db_records_table(self, filtered: bool = False) -> None:
         """Prints a pretty table of records
 
@@ -178,20 +179,20 @@ class Email:
         else:
             items = self.get_db_records()
         for r in items:
-            fn = f"{r['datetime'].strftime('%y%m%d_%H%M')}"
-            fn += f"__{r['sender'].split()[0]}__"
-            fn += re.sub(r"[^\w]", "", f"{'_'.join(r['subject'].split()[:10])}")
-            fn += f".html"
+            fn_ = f"{r['datetime'].strftime('%y%m%d_%H%M')}"
+            fn_ += f"__{r['sender'].split()[0]}__"
+            fn_ += re.sub(r"[^\w]", "", f"{'_'.join(r['subject'].split()[:10])}")
+            fn_ += f".html"
             Path(out).mkdir(parents=True, exist_ok=True)
-            f = Path(out) / Path(fn)
+            f = Path(out) / Path(fn_)
             log.info(f"writing {f}")
             t = r["body"]
-            if not '<html' in t:
+            if '<html' not in t:
                 t = f'<meta http-equiv="Content-Type" content="text/html" charset="utf-8"/>{t}'.replace('\n', '<br>')
             f.write_text(t)
 
     def apply_filter(self) -> Annotated[tuple, "List of records"]:
-        """Apply filter based on filter_keyword and filter_range criterias
+        """Apply filter based on filter_keyword and filter_range criteria
 
         :return: List of records
         """
@@ -199,7 +200,7 @@ class Email:
         from_to_date = self.filter_range
         if not any([search_word, any(from_to_date)]):
             self.filtered_records = Mail.select().dicts()
-            return
+            return self.filtered_records
 
         and_items = []
 
@@ -224,8 +225,8 @@ class Email:
 
         records = (
             Mail.select()
-            .where(expression)
-            .dicts()
+                .where(expression)
+                .dicts()
         )
         logger.info(f"found {len(records)} records")
         self.filtered_records = records
@@ -242,28 +243,28 @@ class Email:
             records = self.filtered_records
         elif not records:
             records = self.get_db_records()
-        l = ["Exit"]
-        l.extend(
+        choices = ["Exit"]
+        choices.extend(
             [
                 f"{r['id']} - {r['datetime'].strftime('%y%m%d %H:%M')} - {r['subject']}"
                 for r in records
             ]
         )
-        print('='*79)
+        print('=' * 79)
         cli = ScrollBar(
-            prompt="Which one would you like to look at?", choices=l, height=10
+            prompt="Which one would you like to look at?", choices=choices, height=10
         ).launch()
         i = next(iter(cli.split(" - ")))
         return i if i != "Exit" else None
 
     @staticmethod
-    def format_html(input: Annotated[str, "HTML text"]) -> None:
+    def format_html(input_: Annotated[str, "HTML text"]) -> str:
         """Format and prints MarkDown from HTML within the terminal
 
-        :param input: Input data HTML
+        :param input_: Input data HTML
         :return:
         """
-        html = htmllaundry.sanitize(input, htmllaundry.cleaners.LineCleaner)
+        html = htmllaundry.sanitize(input_, htmllaundry.cleaners.LineCleaner)
         m = md(html)
         lines = [line for line in m.split("\n") if line.strip() != ""]
         return "\n".join(lines[:40])

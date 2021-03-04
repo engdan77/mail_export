@@ -27,7 +27,8 @@ typing-extensions==3.7.4.3
 tzdata==2020.5
 tzlocal==2.1
 urllib3==1.26.2
-
 markdownify~=0.6.3
 bullet~=2.2.0
 htmllaundry~=2.2
+loguru~=0.5.3
+pytest~=6.2.2
