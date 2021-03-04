@@ -1,6 +1,5 @@
 import os
 from rich.traceback import install
-from rich import print
 from rich.console import Console
 from exchange import Email
 import argparse
