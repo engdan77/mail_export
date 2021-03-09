@@ -15,7 +15,7 @@ from markdownify import markdownify as md
 from loguru import logger
 import operator
 from functools import reduce
-from typing import Annotated
+from typing import Annotated, NamedTuple
 
 ISO_FORMAT = "%Y-%m-%d %H:%M:%S"
 database_proxy = DatabaseProxy()
@@ -38,13 +38,13 @@ class Email:
         self.filter_keyword = ''
         self.filter_range = None, None
         self.filename = database
-        db = SqliteDatabase(self.filename)
-        database_proxy.initialize(db)
+        self.db = SqliteDatabase(self.filename)
+        database_proxy.initialize(self.db)
         self.email = email
         self.password = password
         self.filtered_records = []
 
-        db.create_tables(
+        self.db.create_tables(
             [
                 Mail,
             ]
@@ -114,14 +114,7 @@ class Email:
             if bail_out:
                 return
             try:
-                f = nt("f", fields)(
-                    self.to_iso_dt(str(item.datetime_received.strftime(ISO_FORMAT))),
-                    f"{item.sender.name} <{item.sender.email_address}>",
-                    ",".join([f"{_.name} <{_.email_address}>" for _ in item.to_recipients]),
-                    str(item.display_cc),
-                    item.subject,
-                    item.body,
-                )
+                f = self.extract_email_items(fields, item)
             except TypeError:
                 log.warn(f'Unable to process email, skipping: {item}')
                 continue
@@ -134,6 +127,20 @@ class Email:
             elif not passed:
                 bail_out = 'y' in input('I have found existing e-mail stored, would you like to abort (y/n):').lower()
                 passed = True
+
+    def add_record(self, input_dict):
+        Mail.insert(**input_dict).execute()
+
+    def extract_email_items(self, fields, item) -> NamedTuple:
+        f: NamedTuple = nt("f", fields)(
+                        self.to_iso_dt(str(item.datetime_received.strftime(ISO_FORMAT))),
+                        f"{item.sender.name} <{item.sender.email_address}>",
+                        ",".join([f"{_.name} <{_.email_address}>" for _ in item.to_recipients]),
+                        str(item.display_cc),
+                        item.subject,
+                        item.body
+        )
+        return f
 
     @staticmethod
     def get_db_records(**kwargs) -> Annotated[tuple, "List of records"]:
@@ -225,8 +232,8 @@ class Email:
 
         records = (
             Mail.select()
-                .where(expression)
-                .dicts()
+            .where(expression)
+            .dicts()
         )
         logger.info(f"found {len(records)} records")
         self.filtered_records = records

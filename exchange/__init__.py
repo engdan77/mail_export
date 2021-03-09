@@ -1,1 +1,1 @@
-from .api import Email
+from .api import Email, Mail
