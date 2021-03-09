@@ -115,7 +115,6 @@ class Menu:
 
 def init_log() -> None:
     """Initialize logging"""
-
     logger.remove()
     logger.add('app.log', rotation='100 MB')
 
