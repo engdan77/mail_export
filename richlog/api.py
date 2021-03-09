@@ -1,3 +1,4 @@
+"""Log using rich"""
 import logging
 from rich.logging import RichHandler
 
