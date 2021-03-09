@@ -12,7 +12,9 @@ I chose to store those e-mails to a SQLite database being a portable format.
 $ pip install git+https://github.com/engdan77/mail_export.git
 ```
 
+#### Demo
 
+[![asciicast](https://asciinema.org/a/b4gPeoUZn342aqhYPRvWlDrW3.svg)](https://asciinema.org/a/b4gPeoUZn342aqhYPRvWlDrW3)
 
 #### Sample usage
 
