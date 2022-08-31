@@ -50,3 +50,11 @@ Choose:
 ```shell script
 $ pytest && pytest --cov ./exchange
 ```
+
+#### Troubleshooting
+
+If you get an error related to installation of _cryptography_ package in MacOS and Python 3.10 you may try the following
+
+```shell
+env LDFLAGS="-L$(brew --prefix openssl@1.1)/lib" CFLAGS="-I$(brew --prefix openssl@1.1)/include" pipx install --verbose git+https://github.com/engdan77/mail_export.git
+```
