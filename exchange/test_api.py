@@ -71,6 +71,7 @@ def test_collect_mail(mocker, faker, mocked_email_db: Mock, mocked_data):
     mocker.patch('exchange.api.Email.extract_email_items', return_value=mocked_data)
     mocker.patch('exchange.api.Mail',
                  select=Mock(return_value=Mock(where=Mock(return_value=Mock(count=Mock(return_value=0))))))
+    mocker.patch('exchange.api.track', return_value=(Mock(),))
     mocker.patch('datetime.datetime', return_value=faker.date_time())
     mocked_email_db.collect_mail()
     assert mocked_email_db.extract_email_items.called is True
