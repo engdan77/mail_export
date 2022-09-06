@@ -1,4 +1,6 @@
 import os
+import sys
+
 from rich.traceback import install
 from rich.console import Console
 from exchange import Email
@@ -21,6 +23,11 @@ def get_args() -> argparse.Namespace:
     parser.add_argument('--database', type=str, default='emails.sqlite', help='SQLite database file to store to')
     parser.add_argument('--email', type=str, help='E-mail to download from')
     parser.add_argument('--password', type=str, help='Password for e-mail account')
+    parser.add_argument('--server_name', type=str, help='(Optional) Server to download from and will disable auto-discover mode')
+    parser.add_argument('--username', type=str, help='(Optional) Domain\\Username user with server_name')
+    parser.add_argument('--archive_folders', type=str, help='(Optional) Comma-separated list of archive folders to download')
+    parser.add_argument('--download_now', action="store_true",
+                        help='Bypass menu and download immediately')
     args = parser.parse_args()
     for _ in ('email', 'password'):
         if getattr(args, _, None) is None:
@@ -123,6 +130,9 @@ def main():
     init_log()
     args = get_args()
     email = Email(**args.__dict__)
+    if args.download_now:
+        email.collect_mail()
+        exit(0)
     menu = Menu(args, email)
     menu.main()
 
