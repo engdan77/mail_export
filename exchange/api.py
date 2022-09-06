@@ -50,6 +50,7 @@ class Email:
     ):
         self.filter_keyword = ""
         self.filter_range = None, None
+        self.filter_folder = None
         self.filename = database
         self.db = SqliteDatabase(self.filename)
         database_proxy.initialize(self.db)
@@ -87,6 +88,7 @@ class Email:
         print(f"[bold]Stored count:[/bold] {self.db_count}")
         s, e = [_.strftime("%Y-%m-%d") for _ in self.db_date_range]
         print(f"[bold]Stored range:[/bold] {s} -> {e}")
+        print(f"[bold]Filter folder:[/bold] {self.filter_folder}")
         print("[bold]Filter range:[/bold] {} <-> {}".format(*self.filter_range))
         print(f"[bold]Filter keyword:[/bold] {self.filter_keyword}")
         print(f"[bold]Filter count:[/bold] {len(self.filtered_records)}")
@@ -114,6 +116,11 @@ class Email:
         except AttributeError:
             _ = datetime.datetime.now()
             return _, _
+
+    @property
+    def db_get_folders(self) -> Annotated[tuple, "folder"]:
+        """Return list of folders"""
+        return tuple(_.folder for _ in Mail.select(Mail.folder).group_by(Mail.folder))
 
     def collect_mail(self) -> None:
         """Downloads all emails from account into database
@@ -254,7 +261,8 @@ class Email:
         """
         search_word = self.filter_keyword
         from_to_date = self.filter_range
-        if not any([search_word, any(from_to_date)]):
+        folder = self.filter_folder
+        if not any([folder, search_word, any(from_to_date)]):
             self.filtered_records = Mail.select().dicts()
             return self.filtered_records
 
@@ -275,6 +283,10 @@ class Email:
             from_, to_ = from_to_date
             date_expression = (Mail.datetime >= from_) & (Mail.datetime <= to_)
             and_items.append(date_expression)
+
+        logger.debug(f"filtering on folder {folder}")
+        if folder:
+            and_items.append((Mail.folder == folder))
 
         if len(and_items) > 0:
             expression = reduce(operator.and_, and_items)
@@ -302,7 +314,7 @@ class Email:
         choices = ["Exit"]
         choices.extend(
             [
-                f"{r['id']} - {r['datetime'].strftime('%y%m%d %H:%M')} - {r['subject']}"
+                f"{r['id']} - {r['datetime'].strftime('%y%m%d %H:%M')} - [{r['folder']}] {r['subject']}"
                 for r in records
             ]
         )
@@ -332,6 +344,7 @@ class Email:
         except AttributeError:
             return
         print("[white]_[/white]" * 50)
+        print(f"[bold red]Folder:[/bold red] {r.folder}")
         print(f"[bold red]From:[/bold red] {r.sender}")
         print(f"[bold red]To:[/bold red] {r.to}")
         print(f"[bold red]Cc:[/bold red] {r.cc}")
