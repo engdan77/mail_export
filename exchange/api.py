@@ -1,4 +1,6 @@
-from exchangelib import Credentials, Account
+from enum import Enum
+
+from exchangelib import Credentials, Account, Configuration, DELEGATE
 from peewee import *
 from collections import namedtuple as nt
 import datetime
@@ -28,21 +30,36 @@ class Mail(Model):
     cc = TextField(null=True)
     subject = TextField(null=True)
     body = TextField(null=True)
+    folder = TextField(null=True)
 
     class Meta:
         database = database_proxy
 
 
 class Email:
-    def __init__(self, /, database="emails.sqlite", email=None, password=None):
-        self.filter_keyword = ''
+    def __init__(
+        self,
+        /,
+        database="emails.sqlite",
+        email=None,
+        password=None,
+        server_name=None,
+        username=None,
+        archive_folders=None,
+        download_now=None,
+    ):
+        self.filter_keyword = ""
         self.filter_range = None, None
         self.filename = database
         self.db = SqliteDatabase(self.filename)
         database_proxy.initialize(self.db)
         self.email = email
         self.password = password
+        self.server_name = server_name
+        self.username = username
+        self.archive_folders = archive_folders
         self.filtered_records = []
+        self.download_now = download_now
 
         self.db.create_tables(
             [
@@ -64,16 +81,16 @@ class Email:
 
         :rtype: None
         """
-        print('=' * 50)
-        print(f'[bold]Database:[/bold] {self.filename}')
-        print(f'[bold]E-mail account:[/bold] {self.email}')
-        print(f'[bold]Stored count:[/bold] {self.db_count}')
-        s, e = [_.strftime('%Y-%m-%d') for _ in self.db_date_range]
-        print(f'[bold]Stored range:[/bold] {s} -> {e}')
-        print('[bold]Filter range:[/bold] {} <-> {}'.format(*self.filter_range))
-        print(f'[bold]Filter keyword:[/bold] {self.filter_keyword}')
-        print(f'[bold]Filter count:[/bold] {len(self.filtered_records)}')
-        print('=' * 50)
+        print("=" * 50)
+        print(f"[bold]Database:[/bold] {self.filename}")
+        print(f"[bold]E-mail account:[/bold] {self.email}")
+        print(f"[bold]Stored count:[/bold] {self.db_count}")
+        s, e = [_.strftime("%Y-%m-%d") for _ in self.db_date_range]
+        print(f"[bold]Stored range:[/bold] {s} -> {e}")
+        print("[bold]Filter range:[/bold] {} <-> {}".format(*self.filter_range))
+        print(f"[bold]Filter keyword:[/bold] {self.filter_keyword}")
+        print(f"[bold]Filter count:[/bold] {len(self.filtered_records)}")
+        print("=" * 50)
 
     @property
     def db_count(self) -> int:
@@ -90,8 +107,10 @@ class Email:
         :return: from, to tuple
         """
         try:
-            return (Mail.select().order_by(Mail.datetime).first().datetime,
-                    Mail.select().order_by(Mail.datetime.desc()).first().datetime)
+            return (
+                Mail.select().order_by(Mail.datetime).first().datetime,
+                Mail.select().order_by(Mail.datetime.desc()).first().datetime,
+            )
         except AttributeError:
             _ = datetime.datetime.now()
             return _, _
@@ -101,44 +120,72 @@ class Email:
 
         :return: None
         """
-        credentials = Credentials(self.email, self.password)
-        account = Account(self.email, credentials=credentials, autodiscover=True)
+
+        if all((self.server_name, self.username, self.email)):
+            credentials = Credentials(username=self.username, password=self.password)
+            config = Configuration(server=self.server_name, credentials=credentials)
+            account = Account(
+                primary_smtp_address=self.email,
+                config=config,
+                autodiscover=False,
+                access_type=DELEGATE,
+            )
+        else:
+            credentials = Credentials(self.email, self.password)
+            account = Account(self.email, credentials=credentials, autodiscover=True)
         fields = ("datetime", "sender", "to", "cc", "subject", "body")
         tot = account.inbox.total_count
         log.info(f"total items inbox {tot}")
 
-        bail_out, passed = False, False
-        for item in track(
-                account.inbox.all().order_by("-datetime_received"), total=tot
-        ):
-            if bail_out:
-                return
-            try:
-                f = self.extract_email_items(fields, item)
-            except TypeError:
-                log.warn(f'Unable to process email, skipping: {item}')
-                continue
-            if Mail.select().where(Mail.datetime == f.datetime).count() == 0:
+        download_folders = {"Inbox": account.inbox, "Sent": account.sent}
+
+        if self.archive_folders:
+            for folder in self.archive_folders.split(","):
+                download_folders[f"Archive/{folder}"] = (
+                    account.archive_msg_folder_root / folder
+                )
+
+        for folder, func in reversed(download_folders.items()):
+            count = func.total_count
+            logger.info(f'processing folder "{folder}" with {count} items')
+            bail_out, passed = False, False
+            for item in track(func.all().order_by("-datetime_received"), total=tot):
+                if bail_out:
+                    return
                 try:
-                    Mail.insert(**f._asdict()).execute()
-                except IntegrityError as e:
-                    log.warn(f'Unable to update db: {e.args}')
-                    breakpoint()
-            elif not passed:
-                bail_out = 'y' in input('I have found existing e-mail stored, would you like to abort (y/n):').lower()
-                passed = True
+                    f = self.extract_email_items(fields, item)
+                except TypeError:
+                    log.warn(f"Unable to process email, skipping: {item}")
+                    continue
+                except AttributeError as e:
+                    log.warn(f"{e.args} - skipping")
+                    continue
+                if Mail.select().where(Mail.datetime == f.datetime).count() == 0:
+                    try:
+                        Mail.insert(**f._asdict(), folder=folder).execute()
+                    except IntegrityError as e:
+                        log.warn(f"Unable to update db: {e.args}")
+                        breakpoint()
+                elif not self.download_now and not passed:
+                    bail_out = (
+                        "y"
+                        in input(
+                            "I have found existing e-mail stored, would you like to abort (y/n):"
+                        ).lower()
+                    )
+                    passed = True
 
     def add_record(self, input_dict):
         Mail.insert(**input_dict).execute()
 
     def extract_email_items(self, fields, item) -> NamedTuple:
         f: NamedTuple = nt("f", fields)(
-                        self.to_iso_dt(str(item.datetime_received.strftime(ISO_FORMAT))),
-                        f"{item.sender.name} <{item.sender.email_address}>",
-                        ",".join([f"{_.name} <{_.email_address}>" for _ in item.to_recipients]),
-                        str(item.display_cc),
-                        item.subject,
-                        item.body
+            self.to_iso_dt(str(item.datetime_received.strftime(ISO_FORMAT))),
+            f"{item.sender.name} <{item.sender.email_address}>",
+            ",".join([f"{_.name} <{_.email_address}>" for _ in item.to_recipients]),
+            str(item.display_cc),
+            item.subject,
+            item.body,
         )
         return f
 
@@ -194,8 +241,10 @@ class Email:
             f = Path(out) / Path(fn_)
             log.info(f"writing {f}")
             t = r["body"]
-            if '<html' not in t:
-                t = f'<meta http-equiv="Content-Type" content="text/html" charset="utf-8"/>{t}'.replace('\n', '<br>')
+            if "<html" not in t:
+                t = f'<meta http-equiv="Content-Type" content="text/html" charset="utf-8"/>{t}'.replace(
+                    "\n", "<br>"
+                )
             f.write_text(t)
 
     def apply_filter(self) -> Annotated[tuple, "List of records"]:
@@ -213,10 +262,12 @@ class Email:
 
         if search_word:
             s = search_word.lower()
-            or_items = [(Mail.to.contains(s)),
-                        (Mail.sender.contains(s)),
-                        (Mail.subject.contains(s)),
-                        (Mail.body.contains(s))]
+            or_items = [
+                (Mail.to.contains(s)),
+                (Mail.sender.contains(s)),
+                (Mail.subject.contains(s)),
+                (Mail.body.contains(s)),
+            ]
             item_expression = reduce(operator.or_, or_items)
             and_items.append(item_expression)
 
@@ -230,16 +281,14 @@ class Email:
         else:
             expression = and_items[0]
 
-        records = (
-            Mail.select()
-            .where(expression)
-            .dicts()
-        )
+        records = Mail.select().where(expression).dicts()
         logger.info(f"found {len(records)} records")
         self.filtered_records = records
         return records
 
-    def select_records(self, filtered: bool = False, records: bool = None) -> Annotated[int, "id of selected record"]:
+    def select_records(
+        self, filtered: bool = False, records: bool = None
+    ) -> Annotated[int, "id of selected record"]:
         """Supply a selection list and ability to pick one
 
         :param filtered: Only display filtered or all records
@@ -257,7 +306,7 @@ class Email:
                 for r in records
             ]
         )
-        print('=' * 79)
+        print("=" * 79)
         cli = ScrollBar(
             prompt="Which one would you like to look at?", choices=choices, height=10
         ).launch()
