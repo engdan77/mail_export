@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='mail_export',
-    version='0.0.3',
+    version='0.0.4',
     packages=['richlog', 'exchange', 'mail_export'],
     install_requires=open('requirements.txt').read().split('\n'),
     url='',
