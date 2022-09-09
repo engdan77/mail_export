@@ -48,7 +48,17 @@ def get_args() -> argparse.Namespace:
         action="store_true",
         help="Bypass menu and download immediately",
     )
+    parser.add_argument(
+        "--purge_mail_older_than",
+        type=int,
+        help="(Optional) Instead of download mail, remove it if older than X days",
+    )
     args = parser.parse_args()
+    if args.download_now and args.purge_mail_older_than:
+        print(
+            "ERROR: You cannot use --download_now and --purge_mail_older_than at the same time"
+        )
+        sys.exit(1)
     for _ in ("email", "password"):
         if getattr(args, _, None) is None:
             setattr(args, _, os.environ.get(_.upper(), None))
@@ -90,7 +100,7 @@ class Menu:
                 "Save filtered e-mails to folder": self.save_filtered_emails,
             }
             if all([self.email.email, self.email.password]):
-                items["Download from account"] = self.email.collect_mail
+                items["Download from account"] = self.email.process_mail
             cli = Bullet(prompt="Choose:", choices=list(items.keys())).launch()
             items.get(cli)()
 
@@ -160,14 +170,15 @@ def init_log() -> None:
     """Initialize logging"""
     logger.remove()
     logger.add("app.log", rotation="100 MB")
+    logger.level("DEBUG")
 
 
 def main():
     init_log()
     args = get_args()
     email = Email(**args.__dict__)
-    if args.download_now:
-        email.collect_mail()
+    if args.download_now or args.purge_mail_older_than:
+        email.process_mail()
         exit(0)
     menu = Menu(args, email)
     menu.main()
