@@ -1,5 +1,4 @@
-from enum import Enum
-
+import time
 from exchangelib import Credentials, Account, Configuration, DELEGATE
 from peewee import *
 from collections import namedtuple as nt
@@ -14,7 +13,6 @@ from pathlib import Path
 from bullet import ScrollBar
 import htmllaundry
 from markdownify import markdownify as md
-from loguru import logger
 import operator
 from functools import reduce
 from typing import Annotated, NamedTuple
@@ -47,6 +45,7 @@ class Email:
         username=None,
         archive_folders=None,
         download_now=None,
+        purge_mail_older_than=None,
     ):
         self.filter_keyword = ""
         self.filter_range = None, None
@@ -61,6 +60,7 @@ class Email:
         self.archive_folders = archive_folders
         self.filtered_records = []
         self.download_now = download_now
+        self.purge_older_than = purge_mail_older_than
 
         self.db.create_tables(
             [
@@ -122,7 +122,7 @@ class Email:
         """Return list of folders"""
         return tuple(_.folder for _ in Mail.select(Mail.folder).group_by(Mail.folder))
 
-    def collect_mail(self) -> None:
+    def process_mail(self) -> None:
         """Downloads all emails from account into database
 
         :return: None
@@ -141,8 +141,6 @@ class Email:
             credentials = Credentials(self.email, self.password)
             account = Account(self.email, credentials=credentials, autodiscover=True)
         fields = ("datetime", "sender", "to", "cc", "subject", "body")
-        tot = account.inbox.total_count
-        log.info(f"total items inbox {tot}")
 
         download_folders = {"Inbox": account.inbox, "Sent": account.sent}
 
@@ -152,35 +150,76 @@ class Email:
                     account.archive_msg_folder_root / folder
                 )
 
-        for folder, func in reversed(download_folders.items()):
+        for folder, func in reversed(list(download_folders.items())):
             count = func.total_count
-            logger.info(f'processing folder "{folder}" with {count} items')
+            log.info(f'processing folder "{folder}" with {count} items')
             bail_out, passed = False, False
-            for item in track(func.all().order_by("-datetime_received"), total=tot):
-                if bail_out:
-                    return
-                try:
-                    f = self.extract_email_items(fields, item)
-                except TypeError:
-                    log.warn(f"Unable to process email, skipping: {item}")
-                    continue
-                except AttributeError as e:
-                    log.warn(f"{e.args} - skipping")
-                    continue
-                if Mail.select().where(Mail.datetime == f.datetime).count() == 0:
+            counter = 0
+            tot = func.total_count
+            # for item in track(func.all().order_by("-datetime_received"), total=tot):
+            mail_iterator = iter(func.all().order_by("-datetime_received"))
+            try:
+                while True:
                     try:
-                        Mail.insert(**f._asdict(), folder=folder).execute()
-                    except IntegrityError as e:
-                        log.warn(f"Unable to update db: {e.args}")
-                        breakpoint()
-                elif not self.download_now and not passed:
-                    bail_out = (
-                        "y"
-                        in input(
-                            "I have found existing e-mail stored, would you like to abort (y/n):"
-                        ).lower()
-                    )
-                    passed = True
+                        item = next(mail_iterator)
+                    except KeyError as e:
+                        log.warning(f"error parsing email: {e}")
+                        time.sleep(10)
+                        continue
+                    counter += 1
+                    log.info(f"processing {counter}/{tot} in folder {folder}")
+                    if bail_out:
+                        return
+                    try:
+                        mail_fields = self.extract_email_items(fields, item)
+                    except TypeError:
+                        log.warn(f"Unable to process email, skipping: {item}")
+                        continue
+                    except AttributeError as e:
+                        log.warn(f"{e.args} - skipping")
+                        continue
+                    if self.purge_older_than:
+                        log.info(f"purging {counter}/{tot}")
+                        if mail_fields.datetime <= (
+                            datetime.datetime.now()
+                            - datetime.timedelta(days=self.purge_older_than)
+                        ):
+                            self.purge_email_from_server(item, mail_fields, folder)
+                        else:
+                            log.info(f"skipping item {counter}, not within range")
+                    else:
+                        bail_out, passed = self.store_mail_to_db(
+                            mail_fields, folder, passed, bail_out
+                        )
+            except StopIteration:
+                log.info("completed!!!")
+
+    @staticmethod
+    def purge_email_from_server(item, mail_fields, folder):
+        log.info(
+            f"purging mail in {folder} [{mail_fields.datetime}] {mail_fields.subject}"
+        )
+        try:
+            item.delete()
+        except Exception as e:
+            log.warning(f"failed removing due to {e.args}")
+
+    def store_mail_to_db(self, mail_fields, current_folder, passed, bail_out_flag):
+        if Mail.select().where(Mail.datetime == mail_fields.datetime).count() == 0:
+            try:
+                Mail.insert(**mail_fields._asdict(), folder=current_folder).execute()
+            except IntegrityError as e:
+                log.warn(f"Unable to update db: {e.args}")
+                breakpoint()
+        elif not self.download_now and not passed:
+            bail_out_flag = (
+                "y"
+                in input(
+                    "I have found existing e-mail stored, would you like to abort (y/n):"
+                ).lower()
+            )
+            passed = True
+        return bail_out_flag, passed
 
     def add_record(self, input_dict):
         Mail.insert(**input_dict).execute()
@@ -284,7 +323,7 @@ class Email:
             date_expression = (Mail.datetime >= from_) & (Mail.datetime <= to_)
             and_items.append(date_expression)
 
-        logger.debug(f"filtering on folder {folder}")
+        log.debug(f"filtering on folder {folder}")
         if folder:
             and_items.append((Mail.folder == folder))
 
@@ -294,7 +333,7 @@ class Email:
             expression = and_items[0]
 
         records = Mail.select().where(expression).dicts()
-        logger.info(f"found {len(records)} records")
+        log.info(f"found {len(records)} records")
         self.filtered_records = records
         return records
 
