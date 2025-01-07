@@ -29,7 +29,7 @@ tzlocal==2.1
 urllib3==1.26.2
 markdownify~=0.6.3
 bullet~=2.2.0
-htmllaundry~=2.2
+lxml_html_clean
 loguru
 pytest
 pytest-mock

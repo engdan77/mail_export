@@ -11,7 +11,7 @@ from richlog import log
 import re
 from pathlib import Path
 from bullet import ScrollBar
-import htmllaundry
+from lxml_html_clean import clean_html
 from markdownify import markdownify as md
 import operator
 from functools import reduce
@@ -371,7 +371,9 @@ class Email:
         :param input_: Input data HTML
         :return:
         """
-        html = htmllaundry.sanitize(input_, htmllaundry.cleaners.LineCleaner)
+        # html = htmllaundry.sanitize(input_, htmllaundry.cleaners.LineCleaner)
+        from lxml_html_clean import clean_html
+        html = clean_html(input_)
         m = md(html)
         lines = [line for line in m.split("\n") if line.strip() != ""]
         return "\n".join(lines[:40])
